@@ -1,5 +1,7 @@
 # Subscripts involving type variables
 
+## TypeVar bound/constrained to a tuple/int-literal/bool-literal
+
 The upper bounds of type variables are considered when analysing subscripts.
 
 ```toml
@@ -33,11 +35,31 @@ def f[
 ):
     reveal_type(tuple_1[:2])  # revealed: tuple[str, int]
     reveal_type(tuple_1[zero])  # revealed: str
-    reveal_type(tuple_1[some_integer])  # revealed: str | int
+
+    # TODO: ideally this might be `str | int`,
+    # but it's hard to do that without introducing false positives elsewhere
+    reveal_type(tuple_1[some_integer])  # revealed: str | int | bytes
 
     reveal_type(tuple_2[:2])  # revealed: tuple[str, int] | tuple[int, bytes]
     reveal_type(tuple_2[zero])  # revealed: str | int
     reveal_type(tuple_2[some_integer])  # revealed: str | int | bytes
 
 # fmt: on
+```
+
+## Other TypeVars
+
+```toml
+[environment]
+python-version = "3.12"
+```
+
+```py
+from typing import Protocol
+
+class SupportsLessThan(Protocol):
+    def __lt__(self, other, /) -> bool: ...
+
+def f[K: SupportsLessThan](dictionary: dict[K, int], key: K):
+    reveal_type(dictionary[key])  # revealed: int
 ```

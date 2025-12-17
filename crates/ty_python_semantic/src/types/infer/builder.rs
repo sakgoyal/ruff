@@ -12063,35 +12063,36 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
                 expr_context,
             )),
 
-            (Type::TypeVar(var), _) => match var.typevar(db).bound_or_constraints(db) {
-                Some(TypeVarBoundOrConstraints::UpperBound(bound)) => Some(
-                    self.infer_subscript_expression_types(subscript, bound, slice_ty, expr_context),
-                ),
-                Some(TypeVarBoundOrConstraints::Constraints(constraints)) => {
-                    Some(self.infer_subscript_expression_types(
-                        subscript,
-                        constraints.as_type(db),
-                        slice_ty,
-                        expr_context,
-                    ))
+            (Type::TypeVar(var), _) => {
+                let recurse_into_bounds = match slice_ty {
+                    Type::IntLiteral(_) | Type::BooleanLiteral(_) => true,
+                    Type::NominalInstance(nominal) => nominal.slice_literal(db).is_some(),
+                    _ => false,
+                };
+                if recurse_into_bounds {
+                    match var.typevar(db).bound_or_constraints(db) {
+                        Some(TypeVarBoundOrConstraints::UpperBound(bound)) => {
+                            Some(self.infer_subscript_expression_types(
+                                subscript,
+                                bound,
+                                slice_ty,
+                                expr_context,
+                            ))
+                        }
+                        Some(TypeVarBoundOrConstraints::Constraints(constraints)) => {
+                            Some(self.infer_subscript_expression_types(
+                                subscript,
+                                constraints.as_type(db),
+                                slice_ty,
+                                expr_context,
+                            ))
+                        }
+                        None => None,
+                    }
+                } else {
+                    None
                 }
-                None => None,
-            },
-
-            (_, Type::TypeVar(var)) => match var.typevar(db).bound_or_constraints(db) {
-                Some(TypeVarBoundOrConstraints::UpperBound(bound)) => Some(
-                    self.infer_subscript_expression_types(subscript, value_ty, bound, expr_context),
-                ),
-                Some(TypeVarBoundOrConstraints::Constraints(constraints)) => {
-                    Some(self.infer_subscript_expression_types(
-                        subscript,
-                        value_ty,
-                        constraints.as_type(db),
-                        expr_context,
-                    ))
-                }
-                None => None,
-            },
+            }
 
             (Type::Union(union), _) => Some(union.map(db, |element| {
                 self.infer_subscript_expression_types(subscript, *element, slice_ty, expr_context)
