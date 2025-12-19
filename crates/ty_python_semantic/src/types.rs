@@ -2114,6 +2114,14 @@ impl<'db> Type<'db> {
                 ConstraintSet::from(true)
             }
 
+            // Fast path: `object` is not a subtype of any nominal instance type other than itself.
+            // This is important for performance when checking intersections with no positive
+            // elements (pure negations like `~str`), which are treated as having `object` as
+            // the implicit positive element.
+            (Type::NominalInstance(source), Type::NominalInstance(_)) if source.is_object() => {
+                ConstraintSet::from(false)
+            }
+
             // `Never` is the bottom type, the empty set.
             // It is a subtype of all other types.
             (Type::Never, _) => ConstraintSet::from(true),
