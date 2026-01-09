@@ -1155,7 +1155,9 @@ impl ModuleResolutionCandidate {
             return false;
         }
 
-        !self.is_any_namespace_package()
+        // Only regular packages are truly terminal, as a later `foo/__init__.py`
+        // can shadow `foo.py`. Both shadow namespace packages.
+        matches!(self.module, ResolvedModule::RegularPackage(_))
     }
 
     fn to_str<'a>(&self, db: &'a dyn Db) -> Cow<'a, str> {
@@ -1260,16 +1262,19 @@ fn resolve_name_impl<'a>(
         //
         // The existence of a single non-namespace package will shadow
         // all namespace packages *regardless of search-path order*.
+        //
+        // Similarly, the existence of a single regular package will shadow
+        // all modules (mymod.py) *regardless of search-path order*.
+        //
         // This is implemented with the `retain` that follows.
         //
         // We can't do this "delete all namespace packages" eagerly because we want a
         // `PyTyped::Partial` regular package to shadow namespace packages after it.
         // (FIXME: I guess we could just set a flag not to add them...)
 
-        // First record whether we discovered a non-namespace package, and filter out others
-        // (This could could be a lot more simple but we track details for
-        let mut found_module: Option<_> = None;
+        // First record what kinds of things we found
         let mut found_regular_package = None;
+        let mut found_module = None;
         let mut found_legacy_namespace_package = None;
         for candidate in &next_candidates {
             match (candidate.module, candidate.py_typed) {
@@ -1291,17 +1296,19 @@ fn resolve_name_impl<'a>(
                 // TODO: it would be nice to emit a warning about this but we just assume it's fine
             }
 
+            // Regular packages shadow anything that isn't a regular package independent of order
+            if let Some(package) = found_regular_package && !matches!(candidate.module, ResolvedModule::RegularPackage(_)) {
+                tracing::trace!("Discarding namespace package `{}` because a regular package of the same name was found: {}", 
+                    candidate.to_str(db),
+                    package.path(db).as_str(),
+                );
+                return false;
+            }
+            // Modules shadow namespace packages independent of order
             if let Some(module) = found_module && candidate.is_any_namespace_package() {
                 tracing::trace!("Discarding namespace package `{}` because a module of the same name was found: {}", 
                     candidate.to_str(db),
                     module.path(db).as_str(),
-                );
-                return false;
-            }
-            if let Some(package) = found_regular_package && candidate.is_any_namespace_package() {
-                tracing::trace!("Discarding namespace package `{}` because a regular package of the same name was found: {}", 
-                    candidate.to_str(db),
-                    package.path(db).as_str(),
                 );
                 return false;
             }
@@ -2386,7 +2393,7 @@ mod tests {
     fn adding_file_to_search_path_with_lower_priority_does_not_invalidate_query() {
         const TYPESHED: MockedTypeshed = MockedTypeshed {
             versions: "functools: 3.8-",
-            stdlib_files: &[("functools.pyi", "def update_wrapper(): ...")],
+            stdlib_files: &[("functools/__init__.pyi", "def update_wrapper(): ...")],
         };
 
         let TestCase {
@@ -2400,7 +2407,7 @@ mod tests {
             .build();
 
         let functools_module_name = ModuleName::new_static("functools").unwrap();
-        let stdlib_functools_path = stdlib.join("functools.pyi");
+        let stdlib_functools_path = stdlib.join("functools/__init__.pyi");
 
         let functools_module = resolve_module_confident(&db, &functools_module_name).unwrap();
         assert_eq!(functools_module.search_path(&db).unwrap(), &stdlib);
@@ -2412,7 +2419,7 @@ mod tests {
         // Adding a file to site-packages does not invalidate the query,
         // since site-packages takes lower priority in the module resolution
         db.clear_salsa_events();
-        let site_packages_functools_path = site_packages.join("functools.py");
+        let site_packages_functools_path = site_packages.join("functools/__init__.py");
         db.write_file(&site_packages_functools_path, "f: int")
             .unwrap();
         let functools_module = resolve_module_confident(&db, &functools_module_name).unwrap();
