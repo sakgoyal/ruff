@@ -72,7 +72,7 @@ use crate::types::diagnostic::{
     NOT_SUBSCRIPTABLE, POSSIBLY_MISSING_ATTRIBUTE, POSSIBLY_MISSING_IMPLICIT_CALL,
     POSSIBLY_MISSING_IMPORT, SUBCLASS_OF_FINAL_CLASS, TypedDictDeleteErrorKind, UNDEFINED_REVEAL,
     UNRESOLVED_ATTRIBUTE, UNRESOLVED_GLOBAL, UNRESOLVED_IMPORT, UNRESOLVED_REFERENCE,
-    UNSUPPORTED_DYNAMIC_BASE, UNSUPPORTED_OPERATOR, USELESS_OVERLOAD_BODY,
+    UNSUPPORTED_BASE, UNSUPPORTED_DYNAMIC_BASE, UNSUPPORTED_OPERATOR, USELESS_OVERLOAD_BODY,
     hint_if_stdlib_attribute_exists_on_other_versions,
     hint_if_stdlib_submodule_exists_on_other_versions, report_attempted_protocol_instantiation,
     report_bad_dunder_set_call, report_bad_frozen_dataclass_inheritance,
@@ -92,6 +92,7 @@ use crate::types::diagnostic::{
     report_rebound_typevar, report_slice_step_size_zero, report_unsupported_augmented_assignment,
     report_unsupported_binary_operation, report_unsupported_comparison,
 };
+use crate::types::enums::is_enum_class_by_inheritance;
 use crate::types::function::{
     FunctionDecorators, FunctionLiteral, FunctionType, KnownFunction, OverloadLiteral,
     is_implicit_classmethod, is_implicit_staticmethod,
@@ -6205,6 +6206,7 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
             members,
             has_dynamic_namespace,
             None,
+            false,
         );
 
         // Check for MRO errors.
@@ -6308,26 +6310,129 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
                     .iter()
                     .enumerate()
                     .map(|(idx, base)| {
+                        let diagnostic_node = bases_tuple_elts
+                            .and_then(|elts| elts.get(idx))
+                            .unwrap_or(bases_node);
+
                         // First try the standard conversion.
                         if let Some(class_base) =
                             ClassBase::try_from_type(db, *base, placeholder_class)
                         {
-                            // Collect disjoint bases for instance-layout-conflict checking.
-                            if let ClassBase::Class(base_class) = class_base {
-                                if let Some(disjoint_base) = base_class.nearest_disjoint_base(db) {
-                                    disjoint_bases.insert(
-                                        disjoint_base,
-                                        idx,
-                                        base_class.class_literal(db),
-                                    );
+                            // Check for special bases that are not allowed for dynamic classes.
+                            // Dynamic classes can't be generic, protocols, TypedDicts, or enums.
+                            match class_base {
+                                ClassBase::Generic | ClassBase::TypedDict => {
+                                    if let Some(builder) =
+                                        self.context.report_lint(&UNSUPPORTED_BASE, diagnostic_node)
+                                    {
+                                        let mut diagnostic = builder.into_diagnostic(
+                                            "Invalid base for class created via `type()`",
+                                        );
+                                        diagnostic.set_primary_message(format_args!(
+                                            "Has type `{}`",
+                                            base.display(db)
+                                        ));
+                                        match class_base {
+                                            ClassBase::Generic => {
+                                                diagnostic.info(
+                                                    "Classes created via `type()` cannot be generic",
+                                                );
+                                                diagnostic.info(format_args!(
+                                                    "Consider using `class {name}(Generic[...]): ...` instead"
+                                                ));
+                                            }
+                                            ClassBase::TypedDict => {
+                                                diagnostic.info(
+                                                    "Classes created via `type()` cannot be TypedDicts",
+                                                );
+                                                diagnostic.info(format_args!(
+                                                    "Consider using `TypedDict(\"{name}\", ...)` instead"
+                                                ));
+                                            }
+                                            _ => unreachable!(),
+                                        }
+                                    }
+                                    return ClassBase::unknown();
                                 }
-                            }
-                            return class_base;
-                        }
+                                ClassBase::Protocol => {
+                                    if let Some(builder) = self
+                                        .context
+                                        .report_lint(&UNSUPPORTED_DYNAMIC_BASE, diagnostic_node)
+                                    {
+                                        let mut diagnostic = builder.into_diagnostic(
+                                            "Invalid base for class created via `type()`",
+                                        );
+                                        diagnostic.set_primary_message(format_args!(
+                                            "Has type `{}`",
+                                            base.display(db)
+                                        ));
+                                        diagnostic.info(
+                                            "Classes created via `type()` cannot be protocols",
+                                        );
+                                        diagnostic.info(format_args!(
+                                            "Consider using `class {name}(Protocol): ...` instead"
+                                        ));
+                                    }
+                                    return ClassBase::unknown();
+                                }
+                                ClassBase::Class(class_type) => {
+                                    // Check if base is @final (includes enums with members).
+                                    if class_type.is_final(db) {
+                                        if let Some(builder) = self
+                                            .context
+                                            .report_lint(&SUBCLASS_OF_FINAL_CLASS, diagnostic_node)
+                                        {
+                                            builder.into_diagnostic(format_args!(
+                                                "Class `{name}` cannot inherit from final class `{}`",
+                                                class_type.name(db)
+                                            ));
+                                        }
+                                        return ClassBase::unknown();
+                                    }
 
-                        let diagnostic_node = bases_tuple_elts
-                            .and_then(|elts| elts.get(idx))
-                            .unwrap_or(bases_node);
+                                    // Enum subclasses require the EnumMeta metaclass, which
+                                    // expects special dict attributes that `type()` doesn't provide.
+                                    if let Some((static_class, _)) =
+                                        class_type.static_class_literal(db)
+                                    {
+                                        if is_enum_class_by_inheritance(db, static_class) {
+                                            if let Some(builder) = self
+                                                .context
+                                                .report_lint(&UNSUPPORTED_BASE, diagnostic_node)
+                                            {
+                                                let mut diagnostic = builder.into_diagnostic(
+                                                    "Invalid base for class created via `type()`",
+                                                );
+                                                diagnostic.set_primary_message(format_args!(
+                                                    "Has type `{}`",
+                                                    base.display(db)
+                                                ));
+                                                diagnostic.info(
+                                                    "Creating an enum class via `type()` is not supported",
+                                                );
+                                                diagnostic.info(format_args!(
+                                                    "Consider using `class {name}(...): ...` instead"
+                                                ));
+                                            }
+                                            return ClassBase::unknown();
+                                        }
+                                    }
+
+                                    // Collect disjoint bases for instance-layout-conflict checking.
+                                    if let Some(disjoint_base) = class_type.nearest_disjoint_base(db)
+                                    {
+                                        disjoint_bases.insert(
+                                            disjoint_base,
+                                            idx,
+                                            class_type.class_literal(db),
+                                        );
+                                    }
+
+                                    return class_base;
+                                }
+                                ClassBase::Dynamic(_) => return class_base,
+                            }
+                        }
 
                         // If that fails, check if the type is "type-like" (e.g., `type[Base]`).
                         // For type-like bases we emit `unsupported-dynamic-base` and use
