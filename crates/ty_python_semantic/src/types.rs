@@ -1854,6 +1854,7 @@ impl<'db> Type<'db> {
             | Type::AlwaysFalsy
             | Type::AlwaysTruthy
             | Type::PropertyInstance(_)
+            | Type::TypeVar(_)
             // might inherit `Any`, but subtyping is still reflexive
             | Type::ClassLiteral(_)
              => true,
@@ -1865,7 +1866,6 @@ impl<'db> Type<'db> {
             | Type::Union(_)
             | Type::Intersection(_)
             | Type::Callable(_)
-            | Type::TypeVar(_)
             | Type::BoundSuper(_)
             | Type::TypeIs(_)
             | Type::TypeGuard(_)

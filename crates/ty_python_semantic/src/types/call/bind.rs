@@ -2787,18 +2787,12 @@ impl<'a, 'db> ArgumentMatcher<'a, 'db> {
                 let elements = union.elements(db);
                 let mut paramspec = None;
                 if elements.len() == 2 {
-                    match elements[0] {
-                        Type::TypeVar(typevar) => {
-                            if typevar.is_paramspec(db) && elements[1].is_dynamic() {
-                                paramspec = Some(Type::TypeVar(typevar));
-                            }
-                        }
-                        Type::Dynamic(_) => {
-                            if let Type::TypeVar(typevar) = elements[1]
-                                && typevar.is_paramspec(db)
-                            {
-                                paramspec = Some(Type::TypeVar(typevar));
-                            }
+                    match (elements[0], elements[1]) {
+                        (Type::TypeVar(typevar), Type::Dynamic(_))
+                        | (Type::Dynamic(_), Type::TypeVar(typevar))
+                            if typevar.is_paramspec(db) =>
+                        {
+                            paramspec = Some(Type::TypeVar(typevar));
                         }
                         _ => {}
                     }
@@ -2931,18 +2925,12 @@ impl<'a, 'db> ArgumentMatcher<'a, 'db> {
                     let elements = union.elements(db);
                     let mut paramspec = None;
                     if elements.len() == 2 {
-                        match elements[0] {
-                            Type::TypeVar(typevar) => {
-                                if typevar.is_paramspec(db) && elements[1].is_dynamic() {
-                                    paramspec = Some(Type::TypeVar(typevar));
-                                }
-                            }
-                            Type::Dynamic(_) => {
-                                if let Type::TypeVar(typevar) = elements[1]
-                                    && typevar.is_paramspec(db)
-                                {
-                                    paramspec = Some(Type::TypeVar(typevar));
-                                }
+                        match (elements[0], elements[1]) {
+                            (Type::TypeVar(typevar), Type::Dynamic(_))
+                            | (Type::Dynamic(_), Type::TypeVar(typevar))
+                                if typevar.is_paramspec(db) =>
+                            {
+                                paramspec = Some(Type::TypeVar(typevar));
                             }
                             _ => {}
                         }
@@ -3599,18 +3587,12 @@ impl<'a, 'db> ArgumentTypeChecker<'a, 'db> {
                     let elements = union.elements(self.db);
                     let mut paramspec = None;
                     if elements.len() == 2 {
-                        match elements[0] {
-                            Type::TypeVar(typevar) => {
-                                if typevar.is_paramspec(self.db) && elements[1].is_dynamic() {
-                                    paramspec = Some(Type::TypeVar(typevar));
-                                }
-                            }
-                            Type::Dynamic(_) => {
-                                if let Type::TypeVar(typevar) = elements[1]
-                                    && typevar.is_paramspec(self.db)
-                                {
-                                    paramspec = Some(Type::TypeVar(typevar));
-                                }
+                        match (elements[0], elements[1]) {
+                            (Type::TypeVar(typevar), Type::Dynamic(_))
+                            | (Type::Dynamic(_), Type::TypeVar(typevar))
+                                if typevar.is_paramspec(self.db) =>
+                            {
+                                paramspec = Some(Type::TypeVar(typevar));
                             }
                             _ => {}
                         }
