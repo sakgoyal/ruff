@@ -6471,17 +6471,32 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
             }
         };
 
-        let file = self.file();
-        let file_scope = self.scope().file_scope_id(db);
+        let scope = self.scope();
+
+        // Create the anchor for identifying this dynamic namedtuple.
+        // - For assigned namedtuple calls, the Definition uniquely identifies the namedtuple.
+        // - For dangling calls, compute a relative offset from the scope's node index.
+        let anchor = if let Some(def) = definition {
+            DynamicClassAnchor::Definition(def)
+        } else {
+            let call_node_index = call_expr.node_index.load();
+            let scope_anchor = scope.node(db).node_index().unwrap_or(NodeIndex::from(0));
+            let anchor_u32 = scope_anchor
+                .as_u32()
+                .expect("scope anchor should not be NodeIndex::NONE");
+            let call_u32 = call_node_index
+                .as_u32()
+                .expect("call node should not be NodeIndex::NONE");
+            DynamicClassAnchor::ScopeOffset(call_u32 - anchor_u32)
+        };
+
         let namedtuple = DynamicNamedTupleLiteral::new(
             db,
             name,
             fields,
             has_known_fields,
-            file,
-            file_scope,
-            definition,
-            call_expr.range,
+            scope,
+            anchor,
         );
 
         Some(Type::ClassLiteral(ClassLiteral::DynamicNamedTuple(

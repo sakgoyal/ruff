@@ -628,7 +628,7 @@ impl<'db> ClassLiteral<'db> {
         match self {
             Self::Static(class) => class.file(db),
             Self::Dynamic(class) => class.scope(db).file(db),
-            Self::DynamicNamedTuple(class) => class.file(db),
+            Self::DynamicNamedTuple(class) => class.scope(db).file(db),
         }
     }
 
@@ -669,6 +669,7 @@ impl<'db> ClassLiteral<'db> {
         match self {
             Self::Static(class) => class.has_own_ordering_method(db),
             Self::Dynamic(class) => class.has_own_ordering_method(db),
+            Self::DynamicNamedTuple(_) => false,
         }
     }
 
@@ -749,6 +750,8 @@ impl<'db> ClassLiteral<'db> {
         match self {
             Self::Static(class) => class.as_disjoint_base(db),
             Self::Dynamic(class) => class.as_disjoint_base(db),
+            // Dynamic namedtuples don't define their own __slots__.
+            Self::DynamicNamedTuple(_) => None,
         }
     }
 
@@ -2230,6 +2233,8 @@ impl<'db> StaticClassLiteral<'db> {
                             return Some(ty);
                         }
                     }
+                    // Dynamic namedtuples don't define their own ordering methods.
+                    ClassLiteral::DynamicNamedTuple(_) => {}
                 }
             }
         }
@@ -5350,36 +5355,72 @@ pub struct DynamicNamedTupleLiteral<'db> {
     /// and attribute lookups should return `Any` instead of failing.
     pub has_known_fields: bool,
 
-    /// The file containing the namedtuple definition.
-    pub file: File,
+    /// The scope containing the `namedtuple()` / `NamedTuple()` call.
+    pub scope: ScopeId<'db>,
 
-    /// The file scope containing the namedtuple definition.
-    pub file_scope: FileScopeId,
-
-    /// The definition if it came from an assignment (e.g., `Point = namedtuple(...)`).
-    pub definition: Option<Definition<'db>>,
-
-    /// The range of the namedtuple call expression.
-    pub call_range: TextRange,
+    /// The anchor for this dynamic namedtuple, providing stable identity.
+    ///
+    /// - `Definition`: The call is assigned to a variable. The definition
+    ///   uniquely identifies this namedtuple and can be used to find the call.
+    /// - `ScopeOffset`: The call is "dangling" (not assigned). The offset
+    ///   is relative to the enclosing scope's anchor node index.
+    pub anchor: DynamicClassAnchor<'db>,
 }
 
 impl get_size2::GetSize for DynamicNamedTupleLiteral<'_> {}
 
 #[salsa::tracked]
 impl<'db> DynamicNamedTupleLiteral<'db> {
+    /// Returns the definition where this namedtuple is created, if it was assigned to a variable.
+    pub(crate) fn definition(self, db: &'db dyn Db) -> Option<Definition<'db>> {
+        match self.anchor(db) {
+            DynamicClassAnchor::Definition(definition) => Some(definition),
+            DynamicClassAnchor::ScopeOffset(_) => None,
+        }
+    }
+
     /// Returns an instance type for this dynamic namedtuple.
     pub(crate) fn to_instance(self, db: &'db dyn Db) -> Type<'db> {
         Type::instance(db, ClassType::NonGeneric(self.into()))
     }
 
     /// Returns the range of the namedtuple call expression.
-    pub(crate) fn header_range(self, db: &dyn Db) -> TextRange {
-        self.call_range(db)
+    pub(crate) fn header_range(self, db: &'db dyn Db) -> TextRange {
+        let scope = self.scope(db);
+        let file = scope.file(db);
+        let module = parsed_module(db, file).load(db);
+
+        match self.anchor(db) {
+            DynamicClassAnchor::Definition(definition) => {
+                // For definitions, get the range from the definition's value.
+                // The namedtuple call is the value of the assignment.
+                definition
+                    .kind(db)
+                    .value(&module)
+                    .expect("DynamicClassAnchor::Definition should only be used for assignments")
+                    .range()
+            }
+            DynamicClassAnchor::ScopeOffset(offset) => {
+                // For dangling calls, compute the absolute index from the offset.
+                let scope_anchor = scope.node(db).node_index().unwrap_or(NodeIndex::from(0));
+                let anchor_u32 = scope_anchor
+                    .as_u32()
+                    .expect("anchor should not be NodeIndex::NONE");
+                let absolute_index = NodeIndex::from(anchor_u32 + offset);
+
+                // Get the node and return its range.
+                let node: &ast::ExprCall = module
+                    .get_by_index(absolute_index)
+                    .try_into()
+                    .expect("scope offset should point to ExprCall");
+                node.range()
+            }
+        }
     }
 
     /// Returns a [`Span`] pointing to the namedtuple call expression.
     pub(super) fn header_span(self, db: &'db dyn Db) -> Span {
-        Span::from(self.file(db)).with_range(self.header_range(db))
+        Span::from(self.scope(db).file(db)).with_range(self.header_range(db))
     }
 
     /// Compute the MRO for this namedtuple.
@@ -5833,7 +5874,9 @@ impl<'db> QualifiedClassName<'db> {
                 (scope.file(self.db), scope.file_scope_id(self.db), 0)
             }
             ClassLiteral::DynamicNamedTuple(namedtuple) => {
-                (namedtuple.file(self.db), namedtuple.file_scope(self.db), 0)
+                // Dynamic namedtuples don't have a body scope; start from the enclosing scope.
+                let scope = namedtuple.scope(self.db);
+                (scope.file(self.db), scope.file_scope_id(self.db), 0)
             }
         };
 
