@@ -6367,8 +6367,24 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
         let name = if let Type::StringLiteral(literal) = name_type {
             ast::name::Name::new(literal.value(db))
         } else {
-            // Name must be a string literal for us to synthesize a proper type.
-            return None;
+            // Name is not a string literal; use <unknown> like we do for type() calls.
+            if !name_type.is_assignable_to(db, KnownClass::Str.to_instance(db))
+                && let Some(builder) = self.context.report_lint(&INVALID_ARGUMENT_TYPE, name_arg)
+            {
+                let func_name = if is_typing_namedtuple {
+                    "typing.NamedTuple"
+                } else {
+                    "collections.namedtuple"
+                };
+                let mut diagnostic = builder.into_diagnostic(format_args!(
+                    "Invalid argument to parameter `typename` of `{func_name}()`"
+                ));
+                diagnostic.set_primary_message(format_args!(
+                    "Expected `str`, found `{}`",
+                    name_type.display(db)
+                ));
+            }
+            ast::name::Name::new_static("<unknown>")
         };
 
         // Handle fields based on which namedtuple variant.

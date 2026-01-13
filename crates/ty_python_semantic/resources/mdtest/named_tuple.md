@@ -327,7 +327,7 @@ reveal_mro(Point4)  # revealed: (<class 'Point'>, <class 'tuple[Any, Any]'>, <cl
 
 # Invalid: integer is not a valid typename
 # error: [invalid-argument-type]
-reveal_type(collections.namedtuple(123, ["x", "y"]))  # revealed: type[NamedTupleFallback]
+reveal_type(collections.namedtuple(123, ["x", "y"]))  # revealed: <class '<unknown>'>
 ```
 
 The `typing.NamedTuple` function accepts `Iterable[tuple[str, Any]]` for `fields`:
