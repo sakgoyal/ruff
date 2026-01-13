@@ -72,7 +72,7 @@ use crate::types::diagnostic::{
     NOT_SUBSCRIPTABLE, POSSIBLY_MISSING_ATTRIBUTE, POSSIBLY_MISSING_IMPLICIT_CALL,
     POSSIBLY_MISSING_IMPORT, SUBCLASS_OF_FINAL_CLASS, TypedDictDeleteErrorKind, UNDEFINED_REVEAL,
     UNRESOLVED_ATTRIBUTE, UNRESOLVED_GLOBAL, UNRESOLVED_IMPORT, UNRESOLVED_REFERENCE,
-    UNSUPPORTED_BASE, UNSUPPORTED_DYNAMIC_BASE, UNSUPPORTED_OPERATOR, USELESS_OVERLOAD_BODY,
+    UNSUPPORTED_DYNAMIC_BASE, UNSUPPORTED_OPERATOR, USELESS_OVERLOAD_BODY,
     hint_if_stdlib_attribute_exists_on_other_versions,
     hint_if_stdlib_submodule_exists_on_other_versions, report_attempted_protocol_instantiation,
     report_bad_dunder_set_call, report_bad_frozen_dataclass_inheritance,
@@ -6322,7 +6322,7 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
                             match class_base {
                                 ClassBase::Generic | ClassBase::TypedDict => {
                                     if let Some(builder) =
-                                        self.context.report_lint(&UNSUPPORTED_BASE, diagnostic_node)
+                                        self.context.report_lint(&INVALID_BASE, diagnostic_node)
                                     {
                                         let mut diagnostic = builder.into_diagnostic(
                                             "Invalid base for class created via `type()`",
@@ -6397,7 +6397,7 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
                                         if is_enum_class_by_inheritance(db, static_class) {
                                             if let Some(builder) = self
                                                 .context
-                                                .report_lint(&UNSUPPORTED_BASE, diagnostic_node)
+                                                .report_lint(&INVALID_BASE, diagnostic_node)
                                             {
                                                 let mut diagnostic = builder.into_diagnostic(
                                                     "Invalid base for class created via `type()`",
