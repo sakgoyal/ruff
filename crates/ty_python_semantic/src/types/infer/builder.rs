@@ -6345,7 +6345,7 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
                                                     "Classes created via `type()` cannot be TypedDicts",
                                                 );
                                                 diagnostic.info(format_args!(
-                                                    "Consider using `TypedDict(\"{name}\", ...)` instead"
+                                                    "Consider using `TypedDict(\"{name}\", {{}})` instead"
                                                 ));
                                             }
                                             _ => unreachable!(),
@@ -6359,7 +6359,7 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
                                         .report_lint(&UNSUPPORTED_DYNAMIC_BASE, diagnostic_node)
                                     {
                                         let mut diagnostic = builder.into_diagnostic(
-                                            "Invalid base for class created via `type()`",
+                                            "Unsupported base for class created via `type()`",
                                         );
                                         diagnostic.set_primary_message(format_args!(
                                             "Has type `{}`",
@@ -6410,7 +6410,7 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
                                                     "Creating an enum class via `type()` is not supported",
                                                 );
                                                 diagnostic.info(format_args!(
-                                                    "Consider using `class {name}(...): ...` instead"
+                                                    "Consider using `Enum(\"{name}\", [])` instead"
                                                 ));
                                             }
                                             return ClassBase::unknown();
