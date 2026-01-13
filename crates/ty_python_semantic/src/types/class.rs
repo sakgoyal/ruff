@@ -1366,11 +1366,7 @@ impl<'db> ClassType<'db> {
                 return dynamic.own_class_member(db, name);
             }
             Self::NonGeneric(ClassLiteral::DynamicNamedTuple(namedtuple)) => {
-                return Member {
-                    inner: namedtuple
-                        .own_class_member(db, name)
-                        .unwrap_or_else(|| Place::Undefined.into()),
-                };
+                return namedtuple.own_class_member(db, name);
             }
             Self::NonGeneric(ClassLiteral::Static(class)) => (class, None),
             Self::Generic(generic) => (generic.origin(db), Some(generic.specialization(db))),
@@ -5409,6 +5405,12 @@ impl<'db> DynamicNamedTupleLiteral<'db> {
     ///
     /// For example, `namedtuple("Point", [("x", int), ("y", int)])` inherits from `tuple[int, int]`.
     pub(crate) fn tuple_base_class(self, db: &'db dyn Db) -> ClassType<'db> {
+        // If fields are unknown, return `tuple[Unknown, ...]` to avoid false positives
+        // like index-out-of-bounds errors.
+        if !self.has_known_fields(db) {
+            return TupleType::homogeneous(db, Type::unknown()).to_class_type(db);
+        }
+
         let field_types = self.fields(db).iter().map(|(_, ty, _)| *ty);
         TupleType::heterogeneous(db, field_types)
             .map(|t| t.to_class_type(db))
@@ -5450,8 +5452,9 @@ impl<'db> DynamicNamedTupleLiteral<'db> {
         policy: MemberLookupPolicy,
     ) -> PlaceAndQualifiers<'db> {
         // First check synthesized members and fields.
-        if let Some(result) = self.own_class_member(db, name) {
-            return result;
+        let member = self.own_class_member(db, name);
+        if !member.is_undefined() {
+            return member.inner;
         }
 
         // Fall back to tuple class members.
@@ -5473,24 +5476,20 @@ impl<'db> DynamicNamedTupleLiteral<'db> {
     ///
     /// This only checks synthesized members and field properties, without falling
     /// back to tuple or other base classes.
-    pub(crate) fn own_class_member(
-        self,
-        db: &'db dyn Db,
-        name: &str,
-    ) -> Option<PlaceAndQualifiers<'db>> {
+    pub(super) fn own_class_member(self, db: &'db dyn Db, name: &str) -> Member<'db> {
         // Handle synthesized namedtuple attributes.
         if let Some(ty) = self.synthesized_class_member(db, name) {
-            return Some(Place::bound(ty).into());
+            return Member::definitely_declared(ty);
         }
 
         // Check if it's a field name (returns a property descriptor).
         for (field_name, field_ty, _) in self.fields(db).as_ref() {
             if field_name.as_str() == name {
-                return Some(Place::bound(create_field_property(db, *field_ty)).into());
+                return Member::definitely_declared(create_field_property(db, *field_ty));
             }
         }
 
-        None
+        Member::default()
     }
 
     /// Generate synthesized class members for namedtuples.

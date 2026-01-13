@@ -11,6 +11,8 @@ use ruff_python_ast::{
     NodeIndex, PythonVersion,
 };
 use ruff_python_stdlib::builtins::version_builtin_was_added;
+use ruff_python_stdlib::identifiers::is_identifier;
+use ruff_python_stdlib::keyword::is_keyword;
 use ruff_text_size::{Ranged, TextRange};
 use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
@@ -6468,10 +6470,6 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
             if let Some(mut field_names) = maybe_field_names {
                 // Apply rename logic, if `rename=True`.
                 if rename {
-                    use ruff_python_stdlib::identifiers::is_identifier;
-                    use ruff_python_stdlib::keyword::is_keyword;
-                    use rustc_hash::FxHashSet;
-
                     let mut seen_names = FxHashSet::<&str>::default();
                     for (i, field_name) in field_names.iter_mut().enumerate() {
                         let name_str = field_name.as_str();

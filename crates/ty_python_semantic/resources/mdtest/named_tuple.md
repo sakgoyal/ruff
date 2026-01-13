@@ -282,6 +282,7 @@ accepted because the constructor uses a gradual signature:
 
 ```py
 import collections
+from ty_extensions import reveal_mro
 
 CheckerConfig = ["duration", "video_fps", "audio_sample_rate"]
 GroundTruth = collections.namedtuple("GroundTruth", " ".join(CheckerConfig))
@@ -290,6 +291,14 @@ GroundTruth = collections.namedtuple("GroundTruth", " ".join(CheckerConfig))
 config = GroundTruth(duration=0, video_fps=30, audio_sample_rate=44100)
 reveal_type(config)  # revealed: GroundTruth
 reveal_type(config.duration)  # revealed: Any
+
+# Namedtuples with unknown fields inherit from tuple[Unknown, ...] to avoid false positives.
+# revealed: (<class 'GroundTruth'>, <class 'tuple[Unknown, ...]'>, <class 'object'>)
+reveal_mro(GroundTruth)
+
+# No index-out-of-bounds error since the tuple length is unknown.
+reveal_type(config[0])  # revealed: Unknown
+reveal_type(config[100])  # revealed: Unknown
 ```
 
 ### Functional syntax signature validation
@@ -409,7 +418,8 @@ Bad5 = NamedTuple("Bad5", [("x", int)], foobarbaz=42)
 ### Starred and double-starred arguments
 
 When starred (`*args`) or double-starred (`**kwargs`) arguments are used, we fall back to normal
-call binding since we can't statically determine the arguments:
+call binding since we can't statically determine the arguments. This results in `NamedTupleFallback`
+being returned:
 
 ```py
 import collections
@@ -418,19 +428,22 @@ from typing import NamedTuple
 args = ("Point", ["x", "y"])
 kwargs = {"rename": True}
 
-# Starred positional arguments - falls back to normal call binding
+# Starred positional arguments - falls back to NamedTupleFallback
 Point1 = collections.namedtuple(*args)
-reveal_type(Point1)  # revealed: Point
+reveal_type(Point1)  # revealed: type[NamedTupleFallback]
 
+# error: [invalid-argument-type]
 Point2 = NamedTuple(*args)
-reveal_type(Point2)  # revealed: Point
+reveal_type(Point2)  # revealed: type[NamedTupleFallback]
 
-# Double-starred keyword arguments - falls back to normal call binding
+# Double-starred keyword arguments - falls back to NamedTupleFallback
+# error: [invalid-argument-type]
+# error: [invalid-argument-type]
 Point3 = collections.namedtuple("Point", ["x", "y"], **kwargs)
-reveal_type(Point3)  # revealed: Point
+reveal_type(Point3)  # revealed: type[NamedTupleFallback]
 
 Point4 = NamedTuple("Point", [("x", int), ("y", int)], **kwargs)
-reveal_type(Point4)  # revealed: Point
+reveal_type(Point4)  # revealed: type[NamedTupleFallback]
 ```
 
 ### Definition
