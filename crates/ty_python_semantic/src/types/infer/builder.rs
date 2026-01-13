@@ -6279,7 +6279,7 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
     ///
     /// Returns `None` if the call doesn't match a namedtuple pattern, signalling that
     /// we should fall back to normal call binding.
-    #[allow(clippy::type_complexity)]
+    #[expect(clippy::type_complexity)]
     fn infer_namedtuple_call_expression(
         &mut self,
         call_expr: &ast::ExprCall,
@@ -6499,7 +6499,7 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
     }
 
     /// Extract fields from a typing.NamedTuple fields argument.
-    #[allow(clippy::type_complexity)]
+    #[expect(clippy::type_complexity)]
     fn extract_typing_namedtuple_fields(
         &mut self,
         fields_type: Type<'db>,
@@ -6539,7 +6539,7 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
 
     /// Extract fields from a typing.NamedTuple fields argument by looking at the AST directly.
     /// This handles list/tuple literals that contain (name, type) pairs.
-    #[allow(clippy::type_complexity)]
+    #[expect(clippy::type_complexity)]
     fn extract_typing_namedtuple_fields_from_ast(
         &mut self,
         fields_arg: &ast::Expr,

@@ -170,11 +170,14 @@ properly inherited:
 
 ```py
 from typing import NamedTuple
+from ty_extensions import reveal_mro
 
 class Url(NamedTuple("Url", [("host", str), ("path", str)])):
     pass
 
 reveal_type(Url)  # revealed: <class 'Url'>
+# revealed: (<class 'mdtest_snippet.Url @ src/mdtest_snippet.py:4:7'>, <class 'mdtest_snippet.Url @ src/mdtest_snippet.py:4:11'>, <class 'tuple[str, str]'>, <class 'object'>)
+reveal_mro(Url)
 reveal_type(Url.__new__)  # revealed: (cls: type, host: str, path: str) -> Url
 
 # Constructor works with the inherited fields.
@@ -288,26 +291,31 @@ The `collections.namedtuple` function accepts `str | Iterable[str]` for `field_n
 
 ```py
 import collections
+from ty_extensions import reveal_mro
 
 # String field names (space-separated)
 Point1 = collections.namedtuple("Point", "x y")
 reveal_type(Point1)  # revealed: <class 'Point'>
+reveal_mro(Point1)  # revealed: (<class 'Point'>, <class 'tuple[Any, Any]'>, <class 'object'>)
 
 # String field names (comma-separated also works at runtime)
 Point2 = collections.namedtuple("Point", "x, y")
 reveal_type(Point2)  # revealed: <class 'Point'>
+reveal_mro(Point2)  # revealed: (<class 'Point'>, <class 'tuple[Any, Any]'>, <class 'object'>)
 
 # List of strings
 Point3 = collections.namedtuple("Point", ["x", "y"])
 reveal_type(Point3)  # revealed: <class 'Point'>
+reveal_mro(Point3)  # revealed: (<class 'Point'>, <class 'tuple[Any, Any]'>, <class 'object'>)
 
 # Tuple of strings
 Point4 = collections.namedtuple("Point", ("x", "y"))
 reveal_type(Point4)  # revealed: <class 'Point'>
+reveal_mro(Point4)  # revealed: (<class 'Point'>, <class 'tuple[Any, Any]'>, <class 'object'>)
 
 # Invalid: integer is not a valid typename
 # error: [invalid-argument-type]
-collections.namedtuple(123, ["x", "y"])
+reveal_type(collections.namedtuple(123, ["x", "y"]))  # revealed: type[NamedTupleFallback]
 ```
 
 The `typing.NamedTuple` function accepts `Iterable[tuple[str, Any]]` for `fields`:
