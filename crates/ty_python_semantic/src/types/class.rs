@@ -3839,33 +3839,8 @@ impl<'db> StaticClassLiteral<'db> {
     ) -> FxIndexMap<Name, Field<'db>> {
         if field_policy == CodeGeneratorKind::NamedTuple {
             // NamedTuples do not allow multiple inheritance, so it is sufficient to enumerate the
-            // fields of this class only. However, if the class inherits from a functional namedtuple
-            // (DynamicNamedTupleLiteral), we need to include the base's fields.
-            let mut fields = FxIndexMap::default();
-
-            // Check for functional namedtuple base first.
-            for base in self.explicit_bases(db) {
-                if let Type::ClassLiteral(ClassLiteral::DynamicNamedTuple(namedtuple)) = base {
-                    for (name, ty, default) in namedtuple.fields(db).as_ref() {
-                        fields.insert(
-                            name.clone(),
-                            Field {
-                                declared_ty: *ty,
-                                kind: FieldKind::NamedTuple {
-                                    default_ty: *default,
-                                },
-                                // No definition for functional namedtuple fields.
-                                first_declaration: None,
-                            },
-                        );
-                    }
-                    break;
-                }
-            }
-
-            // Then add own fields (which can override base fields).
-            fields.extend(self.own_fields(db, specialization, field_policy));
-            return fields;
+            // fields of this class only.
+            return self.own_fields(db, specialization, field_policy);
         }
 
         let matching_classes_in_mro: Vec<(StaticClassLiteral<'db>, Option<Specialization<'db>>)> =
