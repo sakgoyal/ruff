@@ -305,6 +305,11 @@ Point1 = collections.namedtuple("Point", "x y")
 reveal_type(Point1)  # revealed: <class 'Point'>
 reveal_mro(Point1)  # revealed: (<class 'Point'>, <class 'tuple[Any, Any]'>, <class 'object'>)
 
+# String field names with multiple spaces
+Point1a = collections.namedtuple("Point", "x       y")
+reveal_type(Point1a)  # revealed: <class 'Point'>
+reveal_mro(Point1a)  # revealed: (<class 'Point'>, <class 'tuple[Any, Any]'>, <class 'object'>)
+
 # String field names (comma-separated also works at runtime)
 Point2 = collections.namedtuple("Point", "x, y")
 reveal_type(Point2)  # revealed: <class 'Point'>
