@@ -6505,6 +6505,8 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
         fields_type: Type<'db>,
     ) -> Option<Box<[(ast::name::Name, Type<'db>, Option<Type<'db>>)]>> {
         let db = self.db();
+        let scope_id = self.scope();
+        let typevar_binding_context = self.typevar_binding_context;
 
         // Try to extract from a tuple/list type.
         let tuple_spec = fields_type.exact_tuple_instance_spec(db)?;
@@ -6520,16 +6522,10 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
                     .as_string_literal()
                     .map(|s| ast::name::Name::new(s.value(db)))?;
                 let field_ty = elements[1];
-                // Convert class literals to instances.
-                let resolved_ty = match field_ty {
-                    Type::ClassLiteral(class) => class.to_non_generic_instance(db),
-                    Type::GenericAlias(alias) => Type::instance(db, ClassType::Generic(*alias)),
-                    Type::SubclassOf(subclass_of) => match subclass_of.subclass_of() {
-                        crate::types::SubclassOfInner::Class(class) => Type::instance(db, class),
-                        _ => *field_ty,
-                    },
-                    ty => *ty,
-                };
+                // Convert value types to type expression types (e.g., class literals to instances).
+                let resolved_ty = field_ty
+                    .in_type_expression(db, scope_id, typevar_binding_context)
+                    .unwrap_or(*field_ty);
                 Some((field_name, resolved_ty, None))
             })
             .collect();
