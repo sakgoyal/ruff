@@ -138,6 +138,13 @@ url = Url("localhost", 8080)
 reveal_type(url.host)  # revealed: str
 reveal_type(url.port)  # revealed: int
 
+# Generic types are also correctly converted to instance types.
+generic_fields = (("items", list[int]), ("mapping", dict[str, bool]))
+Container = NamedTuple("Container", generic_fields)
+container = Container([1, 2, 3], {"a": True})
+reveal_type(container.items)  # revealed: list[int]
+reveal_type(container.mapping)  # revealed: dict[str, bool]
+
 # MRO includes the properly specialized tuple type.
 # revealed: (<class 'Url'>, <class 'tuple[str, int]'>, <class 'object'>)
 reveal_mro(Url)

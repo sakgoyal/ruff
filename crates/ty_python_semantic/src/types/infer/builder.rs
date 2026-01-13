@@ -6414,7 +6414,7 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
                             .map(ast::name::Name::new)
                             .collect(),
                     )
-                } else if let Some(tuple_spec) = fields_type.exact_tuple_instance_spec(db) {
+                } else if let Some(tuple_spec) = fields_type.tuple_instance_spec(db) {
                     // Handle list/tuple of strings.
                     tuple_spec
                         .fixed_elements()
@@ -6509,7 +6509,7 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
         let typevar_binding_context = self.typevar_binding_context;
 
         // Try to extract from a tuple/list type.
-        let tuple_spec = fields_type.exact_tuple_instance_spec(db)?;
+        let tuple_spec = fields_type.tuple_instance_spec(db)?;
         let fields: Option<Box<[_]>> = tuple_spec
             .fixed_elements()
             .map(|field_tuple| {
