@@ -348,6 +348,64 @@ reveal_type(Person2)  # revealed: <class 'Person'>
 NamedTuple(123, [("name", str)])
 ```
 
+### Keyword arguments for `collections.namedtuple`
+
+The `collections.namedtuple` function accepts `rename`, `defaults`, and `module` keyword arguments:
+
+```py
+import collections
+
+# `rename=True` replaces invalid identifiers with positional names
+Point = collections.namedtuple("Point", ["x", "class", "_y", "z", "z"], rename=True)
+reveal_type(Point)  # revealed: <class 'Point'>
+p = Point(1, 2, 3, 4, 5)
+reveal_type(p.x)  # revealed: Any
+reveal_type(p._1)  # revealed: Any
+reveal_type(p._2)  # revealed: Any
+reveal_type(p.z)  # revealed: Any
+reveal_type(p._4)  # revealed: Any
+
+# `defaults` provides default values for the rightmost fields
+Person = collections.namedtuple("Person", ["name", "age", "city"], defaults=["Unknown"])
+reveal_type(Person)  # revealed: <class 'Person'>
+# Can create with all fields
+person1 = Person("Alice", 30, "NYC")
+# Can omit the field with default
+person2 = Person("Bob", 25)
+reveal_type(person1.city)  # revealed: Any
+reveal_type(person2.city)  # revealed: Any
+
+# `module` is valid but doesn't affect type checking
+Config = collections.namedtuple("Config", ["host", "port"], module="myapp")
+reveal_type(Config)  # revealed: <class 'Config'>
+
+# Unknown keyword arguments produce an error
+# error: [unknown-argument]
+Bad1 = collections.namedtuple("Bad1", ["x", "y"], foobarbaz=42)
+
+# Multiple unknown keyword arguments
+# error: [unknown-argument]
+# error: [unknown-argument]
+Bad2 = collections.namedtuple("Bad2", ["x"], invalid1=True, invalid2=False)
+```
+
+### Keyword arguments for `typing.NamedTuple`
+
+The `typing.NamedTuple` function does not accept any keyword arguments:
+
+```py
+from typing import NamedTuple
+
+# error: [unknown-argument]
+Bad3 = NamedTuple("Bad3", [("x", int)], rename=True)
+
+# error: [unknown-argument]
+Bad4 = NamedTuple("Bad4", [("x", int)], defaults=[0])
+
+# error: [unknown-argument]
+Bad5 = NamedTuple("Bad5", [("x", int)], foobarbaz=42)
+```
+
 ### Definition
 
 <!-- snapshot-diagnostics -->

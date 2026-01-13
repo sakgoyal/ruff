@@ -72,8 +72,8 @@ use crate::types::diagnostic::{
     INVALID_TYPE_VARIABLE_CONSTRAINTS, INVALID_TYPED_DICT_STATEMENT, IncompatibleBases,
     NOT_SUBSCRIPTABLE, POSSIBLY_MISSING_ATTRIBUTE, POSSIBLY_MISSING_IMPLICIT_CALL,
     POSSIBLY_MISSING_IMPORT, SUBCLASS_OF_FINAL_CLASS, TypedDictDeleteErrorKind, UNDEFINED_REVEAL,
-    UNRESOLVED_ATTRIBUTE, UNRESOLVED_GLOBAL, UNRESOLVED_IMPORT, UNRESOLVED_REFERENCE,
-    UNSUPPORTED_DYNAMIC_BASE, UNSUPPORTED_OPERATOR, USELESS_OVERLOAD_BODY,
+    UNKNOWN_ARGUMENT, UNRESOLVED_ATTRIBUTE, UNRESOLVED_GLOBAL, UNRESOLVED_IMPORT,
+    UNRESOLVED_REFERENCE, UNSUPPORTED_DYNAMIC_BASE, UNSUPPORTED_OPERATOR, USELESS_OVERLOAD_BODY,
     hint_if_stdlib_attribute_exists_on_other_versions,
     hint_if_stdlib_submodule_exists_on_other_versions, report_attempted_protocol_instantiation,
     report_bad_dunder_set_call, report_bad_frozen_dataclass_inheritance,
@@ -6326,7 +6326,7 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
         for kw in keywords {
             if let Some(arg) = &kw.arg {
                 match arg.id.as_str() {
-                    "defaults" => {
+                    "defaults" if is_collections_namedtuple => {
                         // First try to retrieve the count from the AST (for list and tuple literals).
                         defaults_count = match &kw.value {
                             ast::Expr::List(list) => list.elts.len(),
@@ -6350,12 +6350,27 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
                             }
                         }
                     }
-                    "rename" => {
+                    "rename" if is_collections_namedtuple => {
                         rename_type =
                             Some(self.infer_expression(&kw.value, TypeContext::default()));
                     }
-                    _ => {
+                    "module" if is_collections_namedtuple => {
+                        // module is valid but we don't use it for type checking.
                         self.infer_expression(&kw.value, TypeContext::default());
+                    }
+                    unknown_kwarg => {
+                        self.infer_expression(&kw.value, TypeContext::default());
+                        // Report unknown keyword argument.
+                        if let Some(builder) = self.context.report_lint(&UNKNOWN_ARGUMENT, kw) {
+                            builder.into_diagnostic(format_args!(
+                                "Argument `{unknown_kwarg}` does not match any known parameter of `{}`",
+                                if is_typing_namedtuple {
+                                    "typing.NamedTuple()"
+                                } else {
+                                    "collections.namedtuple()"
+                                }
+                            ));
+                        }
                     }
                 }
             } else {
