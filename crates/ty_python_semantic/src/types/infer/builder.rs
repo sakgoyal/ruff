@@ -6206,7 +6206,6 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
             members,
             has_dynamic_namespace,
             None,
-            false,
         );
 
         // Check for MRO errors.
