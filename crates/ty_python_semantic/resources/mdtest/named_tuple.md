@@ -599,7 +599,7 @@ field_names = ["host", "port"]
 
 class Url(namedtuple("Url", field_names)):
     def with_port(self, port: int) -> Self:
-        # Attribute access on Self works via NamedTupleFallback.__getattr__.
+        # Fields are unknown, so attribute access returns `Any`.
         reveal_type(self.host)  # revealed: Any
         reveal_type(self.port)  # revealed: Any
         reveal_type(self.unknown)  # revealed: Any

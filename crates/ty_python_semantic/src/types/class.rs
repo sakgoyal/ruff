@@ -2117,20 +2117,6 @@ impl<'db> StaticClassLiteral<'db> {
         self.is_known(db, KnownClass::Tuple)
     }
 
-    /// Returns `true` if this class directly inherits from the `NamedTuple` special form
-    /// using class syntax (e.g., `class Foo(NamedTuple): ...`).
-    ///
-    /// This is distinct from inheriting from a functional namedtuple like
-    /// `class Foo(namedtuple("Foo", ...)): ...`, which creates a regular class.
-    ///
-    /// The distinction matters because:
-    /// - Classes using class syntax cannot use `super()` or override `__new__`
-    /// - Classes inheriting from functional namedtuples can do both
-    pub(crate) fn directly_inherits_from_named_tuple_special_form(self, db: &'db dyn Db) -> bool {
-        self.explicit_bases(db)
-            .contains(&Type::SpecialForm(SpecialFormType::NamedTuple))
-    }
-
     /// Returns `true` if this class inherits from a functional namedtuple
     /// (`DynamicNamedTupleLiteral`) that has unknown fields.
     ///
@@ -3030,13 +3016,12 @@ impl<'db> StaticClassLiteral<'db> {
             && !self
                 .iter_mro(db, specialization)
                 .filter_map(ClassBase::into_class)
-                .filter(|class| !class.is_object(db))
-                .any(|class| match class.class_literal(db) {
-                    ClassLiteral::Static(literal) => class_member(db, literal.body_scope(db), name)
+                .filter_map(|class| class.static_class_literal(db))
+                .filter(|(class, _)| !class.is_known(db, KnownClass::Object))
+                .any(|(class, _)| {
+                    class_member(db, class.body_scope(db), name)
                         .ignore_possibly_undefined()
-                        .is_some(),
-                    // TODO: Dynamic classes could define ordering methods in their namespace dict.
-                    ClassLiteral::Dynamic(_) | ClassLiteral::DynamicNamedTuple(_) => false,
+                        .is_some()
                 })
             && self.has_ordering_method_in_mro(db, specialization)
             && let Some(root_method_ty) = self.total_ordering_root_method(db, specialization)
@@ -7565,10 +7550,8 @@ impl KnownClass {
                             return;
                         };
 
-                        // Check if the enclosing class directly inherits from NamedTuple special form,
-                        // which forbids the use of `super()`. Classes inheriting from functional
-                        // namedtuples (e.g., `class Foo(namedtuple(...)):`) can use `super()` normally.
-                        if enclosing_class.directly_inherits_from_named_tuple_special_form(db) {
+                        // Check if the enclosing class is a `NamedTuple`, which forbids the use of `super()`.
+                        if CodeGeneratorKind::NamedTuple.matches(db, enclosing_class.into(), None) {
                             if let Some(builder) = context
                                 .report_lint(&SUPER_CALL_IN_NAMED_TUPLE_METHOD, call_expression)
                             {
@@ -7620,11 +7603,13 @@ impl KnownClass {
                         overload.set_return_type(bound_super);
                     }
                     [Some(pivot_class_type), Some(owner_type)] => {
-                        // Check if the enclosing class directly inherits from NamedTuple special form,
-                        // which forbids the use of `super()`. Classes inheriting from functional
-                        // namedtuples (e.g., `class Foo(namedtuple(...)):`) can use `super()` normally.
+                        // Check if the enclosing class is a `NamedTuple`, which forbids the use of `super()`.
                         if let Some(enclosing_class) = nearest_enclosing_class(db, index, scope) {
-                            if enclosing_class.directly_inherits_from_named_tuple_special_form(db) {
+                            if CodeGeneratorKind::NamedTuple.matches(
+                                db,
+                                enclosing_class.into(),
+                                None,
+                            ) {
                                 if let Some(builder) = context
                                     .report_lint(&SUPER_CALL_IN_NAMED_TUPLE_METHOD, call_expression)
                                 {

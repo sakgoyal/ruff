@@ -687,7 +687,7 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
             //     - If the class is a protocol class: check for inheritance from a non-protocol class
             //     - If the class is a NamedTuple class: check for multiple inheritance that isn't `Generic[]`
             for (i, base_class) in class.explicit_bases(self.db()).iter().enumerate() {
-                if class.directly_inherits_from_named_tuple_special_form(self.db())
+                if is_named_tuple
                     && !matches!(
                         base_class,
                         Type::SpecialForm(SpecialFormType::NamedTuple)
