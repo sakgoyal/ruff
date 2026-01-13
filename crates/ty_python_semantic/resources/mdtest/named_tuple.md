@@ -513,6 +513,39 @@ reveal_type(u.host)  # revealed: str
 reveal_type(u.port)  # revealed: int
 ```
 
+### Ordering methods inherited from tuple
+
+Namedtuples inherit comparison methods (`__lt__`, `__le__`, `__gt__`, `__ge__`) from their tuple
+base class. This means `@total_ordering` should not emit a diagnostic, since the required `__lt__`
+method is already present:
+
+```py
+from collections import namedtuple
+from functools import total_ordering
+from typing import NamedTuple
+
+# No error - __lt__ is inherited from the tuple base class
+@total_ordering
+class Point(namedtuple("Point", "x y")): ...
+
+p1 = Point(1, 2)
+p2 = Point(3, 4)
+# TODO: should be `bool`, not `Any | Literal[False]`
+reveal_type(p1 < p2)  # revealed: Any | Literal[False]
+reveal_type(p1 <= p2)  # revealed: Any | Literal[True]
+
+# Same for typing.NamedTuple - no error
+@total_ordering
+class Person(NamedTuple):
+    name: str
+    age: int
+
+alice = Person("Alice", 30)
+bob = Person("Bob", 25)
+reveal_type(alice < bob)  # revealed: bool
+reveal_type(alice >= bob)  # revealed: bool
+```
+
 ### Inheriting from a `NamedTuple`
 
 Inheriting from a `NamedTuple` is supported, but new fields on the subclass will not be part of the
