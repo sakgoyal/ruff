@@ -5384,7 +5384,7 @@ impl<'db> DynamicNamedTupleLiteral<'db> {
     #[salsa::tracked(returns(ref), heap_size = ruff_memory_usage::heap_size)]
     pub(crate) fn mro(self, db: &'db dyn Db) -> Mro<'db> {
         let self_base = ClassBase::Class(ClassType::NonGeneric(self.into()));
-        let tuple_class = self.tuple_base_type(db);
+        let tuple_class = self.tuple_base_class(db);
         let object_class = KnownClass::Object
             .to_class_literal(db)
             .as_class_literal()
@@ -5408,7 +5408,7 @@ impl<'db> DynamicNamedTupleLiteral<'db> {
     /// Compute the tuple type that this namedtuple inherits from.
     ///
     /// For example, `namedtuple("Point", [("x", int), ("y", int)])` inherits from `tuple[int, int]`.
-    pub(crate) fn tuple_base_type(self, db: &'db dyn Db) -> ClassType<'db> {
+    pub(crate) fn tuple_base_class(self, db: &'db dyn Db) -> ClassType<'db> {
         let field_types = self.fields(db).iter().map(|(_, ty, _)| *ty);
         TupleType::heterogeneous(db, field_types)
             .map(|t| t.to_class_type(db))
@@ -5431,7 +5431,7 @@ impl<'db> DynamicNamedTupleLiteral<'db> {
         }
 
         // Fall back to the tuple base type for other attributes.
-        let result = Type::instance(db, self.tuple_base_type(db)).instance_member(db, name);
+        let result = Type::instance(db, self.tuple_base_class(db)).instance_member(db, name);
 
         // If fields are unknown (dynamic) and the attribute wasn't found,
         // return `Any` instead of failing.
@@ -5456,7 +5456,7 @@ impl<'db> DynamicNamedTupleLiteral<'db> {
 
         // Fall back to tuple class members.
         let result = self
-            .tuple_base_type(db)
+            .tuple_base_class(db)
             .class_literal(db)
             .class_member(db, name, policy);
 

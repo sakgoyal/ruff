@@ -6314,6 +6314,13 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
             return None;
         }
 
+        // If any argument is a starred expression or any keyword is a double-starred expression,
+        // we can't statically determine the arguments, so fall back to normal call binding.
+        if args.iter().any(ast::Expr::is_starred_expr) || keywords.iter().any(|kw| kw.arg.is_none())
+        {
+            return None;
+        }
+
         let name_arg = &args[0];
         let fields_arg = &args[1];
 
@@ -6324,57 +6331,55 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
         let mut defaults_count = 0usize;
         let mut rename_type = None;
         for kw in keywords {
-            if let Some(arg) = &kw.arg {
-                match arg.id.as_str() {
-                    "defaults" if is_collections_namedtuple => {
-                        // First try to retrieve the count from the AST (for list and tuple literals).
-                        defaults_count = match &kw.value {
-                            ast::Expr::List(list) => list.elts.len(),
-                            ast::Expr::Tuple(tuple) => tuple.elts.len(),
-                            _ => {
-                                // Fall back to inferring the type.
-                                let ty = self.infer_expression(&kw.value, TypeContext::default());
-                                ty.exact_tuple_instance_spec(db)
-                                    .and_then(|spec| spec.len().maximum())
-                                    .unwrap_or(0)
-                            }
-                        };
-                        // Make sure to infer list and tuple elements.
-                        if let ast::Expr::List(list) = &kw.value {
-                            for elt in &list.elts {
-                                self.infer_expression(elt, TypeContext::default());
-                            }
-                        } else if let ast::Expr::Tuple(tuple) = &kw.value {
-                            for elt in &tuple.elts {
-                                self.infer_expression(elt, TypeContext::default());
-                            }
+            let Some(arg) = &kw.arg else {
+                continue;
+            };
+            match arg.id.as_str() {
+                "defaults" if is_collections_namedtuple => {
+                    // First try to retrieve the count from the AST (for list and tuple literals).
+                    defaults_count = match &kw.value {
+                        ast::Expr::List(list) => list.elts.len(),
+                        ast::Expr::Tuple(tuple) => tuple.elts.len(),
+                        _ => {
+                            // Fall back to inferring the type.
+                            let ty = self.infer_expression(&kw.value, TypeContext::default());
+                            ty.exact_tuple_instance_spec(db)
+                                .and_then(|spec| spec.len().maximum())
+                                .unwrap_or(0)
                         }
-                    }
-                    "rename" if is_collections_namedtuple => {
-                        rename_type =
-                            Some(self.infer_expression(&kw.value, TypeContext::default()));
-                    }
-                    "module" if is_collections_namedtuple => {
-                        // module is valid but we don't use it for type checking.
-                        self.infer_expression(&kw.value, TypeContext::default());
-                    }
-                    unknown_kwarg => {
-                        self.infer_expression(&kw.value, TypeContext::default());
-                        // Report unknown keyword argument.
-                        if let Some(builder) = self.context.report_lint(&UNKNOWN_ARGUMENT, kw) {
-                            builder.into_diagnostic(format_args!(
-                                "Argument `{unknown_kwarg}` does not match any known parameter of `{}`",
-                                if is_typing_namedtuple {
-                                    "typing.NamedTuple()"
-                                } else {
-                                    "collections.namedtuple()"
-                                }
-                            ));
+                    };
+                    // Make sure to infer list and tuple elements.
+                    if let ast::Expr::List(list) = &kw.value {
+                        for elt in &list.elts {
+                            self.infer_expression(elt, TypeContext::default());
+                        }
+                    } else if let ast::Expr::Tuple(tuple) = &kw.value {
+                        for elt in &tuple.elts {
+                            self.infer_expression(elt, TypeContext::default());
                         }
                     }
                 }
-            } else {
-                self.infer_expression(&kw.value, TypeContext::default());
+                "rename" if is_collections_namedtuple => {
+                    rename_type = Some(self.infer_expression(&kw.value, TypeContext::default()));
+                }
+                "module" if is_collections_namedtuple => {
+                    // module is valid but we don't use it for type checking.
+                    self.infer_expression(&kw.value, TypeContext::default());
+                }
+                unknown_kwarg => {
+                    self.infer_expression(&kw.value, TypeContext::default());
+                    // Report unknown keyword argument.
+                    if let Some(builder) = self.context.report_lint(&UNKNOWN_ARGUMENT, kw) {
+                        builder.into_diagnostic(format_args!(
+                            "Argument `{unknown_kwarg}` does not match any known parameter of `{}`",
+                            if is_typing_namedtuple {
+                                "typing.NamedTuple()"
+                            } else {
+                                "collections.namedtuple()"
+                            }
+                        ));
+                    }
+                }
             }
         }
 

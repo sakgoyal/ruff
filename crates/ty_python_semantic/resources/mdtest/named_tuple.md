@@ -406,6 +406,33 @@ Bad4 = NamedTuple("Bad4", [("x", int)], defaults=[0])
 Bad5 = NamedTuple("Bad5", [("x", int)], foobarbaz=42)
 ```
 
+### Starred and double-starred arguments
+
+When starred (`*args`) or double-starred (`**kwargs`) arguments are used, we fall back to normal
+call binding since we can't statically determine the arguments:
+
+```py
+import collections
+from typing import NamedTuple
+
+args = ("Point", ["x", "y"])
+kwargs = {"rename": True}
+
+# Starred positional arguments - falls back to normal call binding
+Point1 = collections.namedtuple(*args)
+reveal_type(Point1)  # revealed: Point
+
+Point2 = NamedTuple(*args)
+reveal_type(Point2)  # revealed: Point
+
+# Double-starred keyword arguments - falls back to normal call binding
+Point3 = collections.namedtuple("Point", ["x", "y"], **kwargs)
+reveal_type(Point3)  # revealed: Point
+
+Point4 = NamedTuple("Point", [("x", int), ("y", int)], **kwargs)
+reveal_type(Point4)  # revealed: Point
+```
+
 ### Definition
 
 <!-- snapshot-diagnostics -->
