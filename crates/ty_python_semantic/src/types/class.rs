@@ -3247,37 +3247,22 @@ impl<'db> StaticClassLiteral<'db> {
                         )
                     })
             }
-            (CodeGeneratorKind::NamedTuple, "__new__") => {
-                let cls_parameter = Parameter::positional_or_keyword(Name::new_static("cls"))
-                    .with_annotated_type(KnownClass::Type.to_instance(db));
-                signature_from_fields(vec![cls_parameter], instance_ty)
-            }
-            (CodeGeneratorKind::NamedTuple, "_replace" | "__replace__") => {
-                if name == "__replace__"
-                    && Program::get(db).python_version(db) < PythonVersion::PY313
-                {
-                    return None;
-                }
-                // Use `Self` type variable as return type so that subclasses get the correct
-                // return type when calling `_replace`. For example, if `IntBox` inherits from
-                // `Box[int]` (a NamedTuple), then `IntBox(1)._replace(content=42)` should return
-                // `IntBox`, not `Box[int]`.
-                let self_ty = Type::TypeVar(BoundTypeVarInstance::synthetic_self(
-                    db,
-                    instance_ty,
-                    BindingContext::Synthetic,
-                ));
-                let self_parameter = Parameter::positional_or_keyword(Name::new_static("self"))
-                    .with_annotated_type(self_ty);
-                signature_from_fields(vec![self_parameter], self_ty)
-            }
-            (CodeGeneratorKind::NamedTuple, "_fields") => {
-                // Synthesize a precise tuple type for _fields using literal string types.
-                // For example, a NamedTuple with `name` and `age` fields gets
-                // `tuple[Literal["name"], Literal["age"]]`.
+            (CodeGeneratorKind::NamedTuple, "__new__" | "_replace" | "__replace__" | "_fields") => {
                 let fields = self.fields(db, specialization, field_policy);
-                let field_types = fields.keys().map(|name| Type::string_literal(db, name));
-                Some(Type::heterogeneous_tuple(db, field_types))
+                let fields_iter = fields.iter().map(|(name, field)| {
+                    let default_ty = match &field.kind {
+                        FieldKind::NamedTuple { default_ty } => *default_ty,
+                        _ => None,
+                    };
+                    (name.clone(), field.declared_ty, default_ty)
+                });
+                synthesize_namedtuple_class_member(
+                    db,
+                    name,
+                    instance_ty,
+                    fields_iter,
+                    specialization.map(|s| s.generic_context(db)),
+                )
             }
             (CodeGeneratorKind::DataclassLike(_), "__lt__" | "__le__" | "__gt__" | "__ge__") => {
                 if !has_dataclass_param(DataclassFlags::ORDER) {
