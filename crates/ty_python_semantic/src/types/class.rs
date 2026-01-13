@@ -230,14 +230,6 @@ impl<'db> CodeGeneratorKind<'db> {
                 .contains(&Type::SpecialForm(SpecialFormType::NamedTuple))
             {
                 Some(CodeGeneratorKind::NamedTuple)
-            } else if class
-                .explicit_bases(db)
-                .iter()
-                .any(|base| matches!(base, Type::ClassLiteral(ClassLiteral::DynamicNamedTuple(_))))
-            {
-                // Class inherits from a functional namedtuple like:
-                // class Url(NamedTuple("Url", [("host", str)])): ...
-                Some(CodeGeneratorKind::NamedTuple)
             } else if class.is_typed_dict(db) {
                 Some(CodeGeneratorKind::TypedDict)
             } else {
@@ -750,7 +742,8 @@ impl<'db> ClassLiteral<'db> {
         match self {
             Self::Static(class) => class.as_disjoint_base(db),
             Self::Dynamic(class) => class.as_disjoint_base(db),
-            // Dynamic namedtuples don't define their own __slots__.
+            // Dynamic namedtuples define `__slots__ = ()`, but `__slots__` must be
+            // non-empty for a class to be a disjoint base.
             Self::DynamicNamedTuple(_) => None,
         }
     }
@@ -5425,15 +5418,13 @@ impl<'db> DynamicNamedTupleLiteral<'db> {
 
     /// Compute the MRO for this namedtuple.
     ///
-    /// The MRO is `[self, tuple, object]`.
+    /// The MRO is `[self, tuple[field_types...], object]`.
+    /// For example, `namedtuple("Point", [("x", int), ("y", int)])` has MRO
+    /// `[Point, tuple[int, int], object]`.
     #[salsa::tracked(returns(ref), heap_size = ruff_memory_usage::heap_size)]
     pub(crate) fn mro(self, db: &'db dyn Db) -> Mro<'db> {
         let self_base = ClassBase::Class(ClassType::NonGeneric(self.into()));
-        let tuple_class = KnownClass::Tuple
-            .to_class_literal(db)
-            .as_class_literal()
-            .expect("tuple should be a class literal")
-            .default_specialization(db);
+        let tuple_class = self.tuple_base_type(db);
         let object_class = KnownClass::Object
             .to_class_literal(db)
             .as_class_literal()
@@ -5546,29 +5537,34 @@ impl<'db> DynamicNamedTupleLiteral<'db> {
     fn synthesized_class_member(self, db: &'db dyn Db, name: &str) -> Option<Type<'db>> {
         let instance_ty = self.to_instance(db);
 
-        // When fields are unknown, skip synthesizing field-specific methods and let them
-        // fall through to NamedTupleFallback which has generic signatures.
-        if !self.has_known_fields(db)
-            && matches!(
-                name,
-                "__new__" | "__init__" | "_fields" | "_replace" | "__replace__"
-            )
-        {
-            return KnownClass::NamedTupleFallback
-                .to_class_literal(db)
-                .as_class_literal()?
-                .as_static()?
-                .own_class_member(db, None, None, name)
-                .ignore_possibly_undefined()
-                .map(|ty| {
-                    ty.apply_type_mapping(
-                        db,
-                        &TypeMapping::ReplaceSelf {
-                            new_upper_bound: instance_ty,
-                        },
-                        TypeContext::default(),
-                    )
-                });
+        // When fields are unknown, handle constructor and field-specific methods specially.
+        if !self.has_known_fields(db) {
+            match name {
+                // For constructors, return a gradual signature that accepts any arguments.
+                "__new__" | "__init__" => {
+                    let signature = Signature::new(Parameters::gradual_form(), instance_ty);
+                    return Some(Type::function_like_callable(db, signature));
+                }
+                // For other field-specific methods, fall through to NamedTupleFallback.
+                "_fields" | "_replace" | "__replace__" => {
+                    return KnownClass::NamedTupleFallback
+                        .to_class_literal(db)
+                        .as_class_literal()?
+                        .as_static()?
+                        .own_class_member(db, None, None, name)
+                        .ignore_possibly_undefined()
+                        .map(|ty| {
+                            ty.apply_type_mapping(
+                                db,
+                                &TypeMapping::ReplaceSelf {
+                                    new_upper_bound: instance_ty,
+                                },
+                                TypeContext::default(),
+                            )
+                        });
+                }
+                _ => {}
+            }
         }
 
         let result = synthesize_namedtuple_class_member(

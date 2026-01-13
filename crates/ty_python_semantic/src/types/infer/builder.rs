@@ -6490,14 +6490,8 @@ impl<'db, 'ast> TypeInferenceBuilder<'db, 'ast> {
             DynamicClassAnchor::ScopeOffset(call_u32 - anchor_u32)
         };
 
-        let namedtuple = DynamicNamedTupleLiteral::new(
-            db,
-            name,
-            fields,
-            has_known_fields,
-            scope,
-            anchor,
-        );
+        let namedtuple =
+            DynamicNamedTupleLiteral::new(db, name, fields, has_known_fields, scope, anchor);
 
         Some(Type::ClassLiteral(ClassLiteral::DynamicNamedTuple(
             namedtuple,

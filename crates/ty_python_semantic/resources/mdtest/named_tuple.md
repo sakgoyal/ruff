@@ -129,6 +129,7 @@ the inferred tuple type:
 
 ```py
 from typing import NamedTuple
+from ty_extensions import static_assert, is_subtype_of, reveal_mro
 
 fields = (("host", str), ("port", int))
 Url = NamedTuple("Url", fields)
@@ -136,6 +137,30 @@ Url = NamedTuple("Url", fields)
 url = Url("localhost", 8080)
 reveal_type(url.host)  # revealed: str
 reveal_type(url.port)  # revealed: int
+
+# MRO includes the properly specialized tuple type.
+# revealed: (<class 'Url'>, <class 'tuple[str, int]'>, <class 'object'>)
+reveal_mro(Url)
+
+static_assert(is_subtype_of(Url, tuple[str, int]))
+
+# Unpacking works correctly with the field types.
+host, port = url
+reveal_type(host)  # revealed: str
+reveal_type(port)  # revealed: int
+
+# error: [invalid-assignment] "Too many values to unpack: Expected 1"
+(only_one,) = url
+
+# error: [invalid-assignment] "Not enough values to unpack: Expected 3"
+a, b, c = url
+
+# Indexing works correctly.
+reveal_type(url[0])  # revealed: str
+reveal_type(url[1])  # revealed: int
+
+# error: [index-out-of-bounds]
+url[2]
 ```
 
 ### Class inheriting from functional NamedTuple
@@ -182,8 +207,17 @@ url = Url("localhost", 8080)
 reveal_type(url.with_port(9000))  # revealed: Url
 ```
 
-Unlike classes that directly use `class Foo(NamedTuple):` syntax, classes inheriting from functional
-namedtuples can use `super()` and override `__new__`:
+For `class Foo(namedtuple("Foo", ...)): ...`, the inner call creates a namedtuple class, but the
+outer class is just a regular class inheriting from it. This is equivalent to:
+
+```py
+class _Foo(NamedTuple): ...
+
+class Foo(_Foo):  # Regular class, not a namedtuple
+    ...
+```
+
+Because the outer class is not itself a namedtuple, it can use `super()` and override `__new__`:
 
 ```py
 from collections import namedtuple
@@ -215,9 +249,8 @@ reveal_type(url)  # revealed: Url
 
 ### Functional syntax with list variable fields
 
-When fields are passed via a list variable (not a literal), we fall back to `NamedTupleFallback`
-which allows any attribute access. This is a regression test for accessing `Self` attributes in
-methods of classes that inherit from namedtuples with dynamic fields:
+When fields are passed via a list variable (not a literal), the field names cannot be determined
+statically. Attribute access returns `Any` and the constructor accepts any arguments:
 
 ```py
 from typing import NamedTuple
@@ -227,7 +260,7 @@ fields = [("host", str), ("port", int)]
 
 class Url(NamedTuple("Url", fields)):
     def with_port(self, port: int) -> Self:
-        # Attribute access on Self works via NamedTupleFallback.__getattr__.
+        # Fields are unknown, so attribute access returns Any.
         reveal_type(self.host)  # revealed: Any
         reveal_type(self.port)  # revealed: Any
         reveal_type(self.unknown)  # revealed: Any
@@ -235,7 +268,7 @@ class Url(NamedTuple("Url", fields)):
 ```
 
 When constructing a namedtuple directly with dynamically-defined fields, keyword arguments are
-accepted via the fallback `__init__`:
+accepted because the constructor uses a gradual signature:
 
 ```py
 import collections
@@ -247,6 +280,52 @@ GroundTruth = collections.namedtuple("GroundTruth", " ".join(CheckerConfig))
 config = GroundTruth(duration=0, video_fps=30, audio_sample_rate=44100)
 reveal_type(config)  # revealed: GroundTruth
 reveal_type(config.duration)  # revealed: Any
+```
+
+### Functional syntax signature validation
+
+The `collections.namedtuple` function accepts `str | Iterable[str]` for `field_names`:
+
+```py
+import collections
+
+# String field names (space-separated)
+Point1 = collections.namedtuple("Point", "x y")
+reveal_type(Point1)  # revealed: <class 'Point'>
+
+# String field names (comma-separated also works at runtime)
+Point2 = collections.namedtuple("Point", "x, y")
+reveal_type(Point2)  # revealed: <class 'Point'>
+
+# List of strings
+Point3 = collections.namedtuple("Point", ["x", "y"])
+reveal_type(Point3)  # revealed: <class 'Point'>
+
+# Tuple of strings
+Point4 = collections.namedtuple("Point", ("x", "y"))
+reveal_type(Point4)  # revealed: <class 'Point'>
+
+# Invalid: integer is not a valid typename
+# error: [invalid-argument-type]
+collections.namedtuple(123, ["x", "y"])
+```
+
+The `typing.NamedTuple` function accepts `Iterable[tuple[str, Any]]` for `fields`:
+
+```py
+from typing import NamedTuple
+
+# List of tuples
+Person1 = NamedTuple("Person", [("name", str), ("age", int)])
+reveal_type(Person1)  # revealed: <class 'Person'>
+
+# Tuple of tuples
+Person2 = NamedTuple("Person", (("name", str), ("age", int)))
+reveal_type(Person2)  # revealed: <class 'Person'>
+
+# Invalid: integer is not a valid typename
+# error: [invalid-argument-type]
+NamedTuple(123, [("name", str)])
 ```
 
 ### Definition
@@ -306,7 +385,8 @@ class D(
 class E(NamedTuple, Protocol): ...
 ```
 
-However, classes inheriting from functional namedtuples can use multiple inheritance freely:
+However, as explained above, for `class Foo(namedtuple("Foo", ...)): ...` the outer class is not
+itself a namedtuple—it just inherits from one. So it can use multiple inheritance freely:
 
 ```py
 from abc import ABC
